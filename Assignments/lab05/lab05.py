@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """Lab 05 — Harris Corner Detector.
 
@@ -10,7 +11,7 @@ in and returns the result out:
   3. gradient_products(Ix, Iy)            Ix^2, Iy^2, Ix*Iy
   4. smooth_products(Ixx, Iyy, Ixy)       Gaussian-weighted sums (A, B, C)
   5. det_and_trace(A, B, C)               Det(M) and Trace(M) at every pixel
-  6. harris_response(det, trace)          Harris response R per pixel
+  6. harris_response(det, trace)           Harris response R per pixel
   7. threshold_response(response)         weak responses set to zero
   8. find_peaks(thresh_response)          one (row, col) per corner
   9. det_coords(image)                    put the steps together
@@ -71,7 +72,17 @@ class HarrisCorner:
         Returns:
             np.ndarray: (k, k) 2D Gaussian kernel, k = int(6 * sigma + 1).
         """
-        raise NotImplementedError("Implement this method")
+        size = int(6 * self.sigma + 1)
+
+        x = np.arange(size) - size // 2
+        y = np.arange(size) - size // 2
+
+        X, Y = np.meshgrid(x, y)
+
+        kernel = np.exp(-(X**2 + Y**2) / (2 * self.sigma**2))
+        kernel = kernel / np.sum(kernel)
+
+        return kernel
 
     def compute_gradients(self, image):
         """Step 2 — Sobel gradients of the image in x and y.
@@ -82,7 +93,22 @@ class HarrisCorner:
         Returns:
             (Ix, Iy): each a 2D array the same shape as image.
         """
-        raise NotImplementedError("Implement this method")
+        sobel_x = np.array([
+            [-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1]
+        ])
+
+        sobel_y = np.array([
+            [-1, -2, -1],
+            [0, 0, 0],
+            [1, 2, 1]
+        ])
+
+        Ix = signal.convolve2d(image, sobel_x, mode='same', boundary='symm')
+        Iy = signal.convolve2d(image, sobel_y, mode='same', boundary='symm')
+
+        return Ix, Iy
 
     def gradient_products(self, Ix, Iy):
         """Step 3 — element-wise products of the gradients.
@@ -93,7 +119,11 @@ class HarrisCorner:
         Returns:
             (Ixx, Iyy, Ixy): Ix*Ix, Iy*Iy, Ix*Iy — each the same shape as Ix.
         """
-        raise NotImplementedError("Implement this method")
+        Ixx = Ix * Ix
+        Iyy = Iy * Iy
+        Ixy = Ix * Iy
+
+        return Ixx, Iyy, Ixy
 
     def smooth_products(self, Ixx, Iyy, Ixy):
         """Step 4 — Gaussian-weighted sum of each gradient product over a
@@ -105,7 +135,13 @@ class HarrisCorner:
         Returns:
             (A, B, C): the Gaussian-weighted Ixx, Iyy, Ixy — same shape as Ixx.
         """
-        raise NotImplementedError("Implement this method")
+        kernel = self.gaussian_kernel()
+
+        A = signal.convolve2d(Ixx, kernel, mode='same', boundary='symm')
+        B = signal.convolve2d(Iyy, kernel, mode='same', boundary='symm')
+        C = signal.convolve2d(Ixy, kernel, mode='same', boundary='symm')
+
+        return A, B, C
 
     def det_and_trace(self, A, B, C):
         """Step 5 — the determinant and trace of M = [[A, C], [C, B]] at
@@ -117,7 +153,10 @@ class HarrisCorner:
         Returns:
             (det, trace): Det(M) = A*B - C^2 and Trace(M) = A + B, same shape as A.
         """
-        raise NotImplementedError("Implement this method")
+        det = A * B - C**2
+        trace = A + B
+
+        return det, trace
 
     def harris_response(self, det, trace):
         """Step 6 — the Harris response R = Det(M) - alpha * Trace(M)^2.
@@ -128,7 +167,9 @@ class HarrisCorner:
         Returns:
             np.ndarray: the response map, same shape as det.
         """
-        raise NotImplementedError("Implement this method")
+        response = det - self.alpha * (trace**2)
+
+        return response
 
     def threshold_response(self, response):
         """Step 7 — keep only the strong responses: every value not above
@@ -140,7 +181,10 @@ class HarrisCorner:
         Returns:
             np.ndarray: the thresholded response map, same shape as response.
         """
-        raise NotImplementedError("Implement this method")
+        result = response.copy()
+        result[result <= self.threshold_val] = 0
+
+        return result
 
     def find_peaks(self, thresh_response):
         """Step 8 — one coordinate per corner: the local maxima of the
@@ -152,7 +196,14 @@ class HarrisCorner:
         Returns:
             np.ndarray: shape (N, 2) array of (row, col) coordinates.
         """
-        raise NotImplementedError("Implement this method")
+        coords = peak_local_max(
+            thresh_response,
+            min_distance=self.min_distance,
+            threshold_abs=0,
+            exclude_border=False
+        )
+
+        return coords
 
     def det_coords(self, image):
         """Step 9 — run the whole pipeline using the methods above.
@@ -166,4 +217,20 @@ class HarrisCorner:
         Returns:
             np.ndarray: shape (N, 2) array of (row, col) corner coordinates.
         """
-        raise NotImplementedError("Implement this method")
+        self.grad_x, self.grad_y = self.compute_gradients(image)
+
+        Ixx, Iyy, Ixy = self.gradient_products(self.grad_x, self.grad_y)
+        self.grad_products = (Ixx, Iyy, Ixy)
+
+        A, B, C = self.smooth_products(Ixx, Iyy, Ixy)
+        self.smoothed = (A, B, C)
+
+        self.det, self.trace = self.det_and_trace(A, B, C)
+
+        self.corner_response = self.harris_response(self.det, self.trace)
+
+        self.thresh_response = self.threshold_response(self.corner_response)
+
+        self.coords = self.find_peaks(self.thresh_response)
+
+        return self.coords
